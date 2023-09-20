@@ -1,0 +1,104 @@
+import json
+import sys
+import requests
+import hashlib
+from bs4 import BeautifulSoup
+
+DATA = []
+DATAPASS = {}
+headers = { 'x-api-key': 'put your api key'}
+count = 1
+
+
+#---------------------------------------------------------------
+def dict2file() :
+    global DATA
+    csv_filename = "result1.csv"
+    csv_file = open(csv_filename, 'w+',encoding='utf-8')
+    csv_file.write("Idp;Login;PasswordHash;ImportDate;Resource;BreachedDate;Password\n")
+    for elem in DATA :
+        sss = f"{elem[0]};{elem[1]};{elem[2]};{elem[3]};{elem[4]};{elem[5]};{elem[6]};\n"
+        csv_file.write(sss)
+    csv_file.close()
+#---------------------------------------------------------------
+def recdict(data):
+    global count
+    global DATA
+    
+    for item in data["credentials"]:
+        idp = str(count)
+        count+=1
+    
+        login = item["login"]
+    
+   
+        passwordHash = item["passwordHash"]
+        importDate = item["importDate"]
+        for origin in item["origins"]:
+            originName = origin["name"]
+            breachedDate = origin["breachedDate"]
+            temp = [idp,login,passwordHash,importDate,originName,breachedDate,'']
+            DATA.append(temp)
+            
+#-----------------------------------------------------------
+def recdictpas(data):
+    global DATAPASS
+    
+    
+    for element in data:
+        
+        sss = bytes(element,encoding='utf-8')
+        hashs = hashlib.sha256(sss) #создаем объект хэша
+        
+        encrypted = hashs.hexdigest()
+        
+        if encrypted not in DATAPASS.keys() :
+            DATAPASS[encrypted] = element
+#-----------------------------------------------------------
+
+params = {'pageSize':'1000','hashAlgo':'HASH_ALGO_SHA256'}
+url = 'https://api.dlbi.ru/v1/credentials/domain/apteka.ru'
+web = requests.get(url,headers=headers,params=params)
+data =web.json()
+recdict(data)
+x = data['after']
+
+while len(x)>0:
+            
+    web = requests.get(url,headers =headers,params=params)
+    params = {'pageSize':'1000','hashAlgo':'HASH_ALGO_SHA256', 'after':x}
+    data = web.json()
+    recdict(data)
+    x = data['after']
+    
+params = {'pageSize':'1000'}
+paswdurl = 'https://api.dlbi.ru/v1/passwords/domain/apteka.ru'
+
+webps = requests.get(paswdurl,headers=headers)
+datapasw = webps.json()
+psw = datapasw['after']
+recdictpas(datapasw)
+
+print('Загрузка паролей с сайта')
+while len(psw)>0:
+    webps = requests.get(paswdurl,headers=headers,params=params)
+    params = {'pageSize':'1000','after':psw}
+    datapasw = webps.json()
+    psw = datapasw['after']
+    recdictpas(datapasw['passwords'])
+    
+
+print('поиск паролей по хэшам')
+count = 0
+for element in DATA :
+    encrypted = element[2]
+    if encrypted in DATAPASS.keys():
+        element[6] = DATAPASS[encrypted]
+    #else :
+        #element[6] = f'passw not finded'
+    DATA[count] = element    
+    count += 1
+print('идет сохранение в файл')
+
+dict2file()
+
